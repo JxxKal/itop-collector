@@ -87,6 +87,34 @@ endif
 	scp $(WINDOWS_HOST):$(WINDOWS_BUILDDIR)/dist/itop-agent-$(VERSION).msi dist/
 	@echo "MSI abgeholt: dist/itop-agent-$(VERSION).msi"
 
+# Code-Signing der Windows-Artefakte.
+#
+# Zertifikat und Passwort kommen aus der Umgebung und stehen NIRGENDS im Repo:
+#
+#   export SIGN_PFX=/sicherer/pfad/cert.pfx
+#   read -rs SIGN_PASS && export SIGN_PASS
+#   make sign
+#
+# Der Zeitstempel ist Pflicht, nicht Kuer: ohne ihn wird jede Signatur in dem
+# Moment ungueltig, in dem das Zertifikat ablaeuft - auch bei Dateien, die lange
+# vorher gebaut wurden.
+.PHONY: sign
+sign:
+ifeq ($(SIGN_PFX),)
+	@echo "SIGN_PFX und SIGN_PASS muessen gesetzt sein."
+	@exit 1
+endif
+	deploy/windows/sign.sh dist/itop-agent.exe $(wildcard dist/*.msi)
+
+# Vollstaendiger Windows-Weg: Binary bauen, signieren, MSI daraus bauen, MSI
+# signieren. Die Reihenfolge zaehlt - die EXE muss signiert sein, BEVOR sie ins
+# MSI eingebettet wird, sonst traegt das Paket eine unsignierte Datei.
+.PHONY: release-windows
+release-windows: build-windows
+	$(MAKE) sign
+	$(MAKE) msi
+	deploy/windows/sign.sh dist/itop-agent-$(VERSION).msi
+
 .PHONY: packages
 packages: build-linux
 	docker run --rm -v $(CURDIR):/src -w /src -e VERSION=$(VERSION) \

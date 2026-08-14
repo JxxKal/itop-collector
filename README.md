@@ -228,6 +228,62 @@ Dazu zwei Eigenheiten von iTop, über die der erste Versuch stolperte:
 | DHCP-Maschine mit IPAM-Adresse | IPAM-Zuweisung überlebt die Agent-Meldung |
 | Zwei Maschinen, dieselbe statische IP | zweite Verknüpfung verweigert und protokolliert |
 
+## Code-Signing
+
+Die Windows-Artefakte werden mit `deploy/windows/sign.sh` signiert
+(`osslsigncode` im Container, kein Windows nötig):
+
+```bash
+export SIGN_PFX=/sicherer/pfad/cert.pfx
+read -rs SIGN_PASS && export SIGN_PASS
+make release-windows        # baut, signiert, packt ins MSI, signiert das MSI
+```
+
+Die Reihenfolge ist wesentlich: die EXE muss signiert sein, **bevor** sie ins
+MSI eingebettet wird — sonst trägt das Paket eine unsignierte Datei.
+
+Zertifikat und Passwort kommen aus der Umgebung, nie aus Argumenten
+(Prozessliste, Shell-Historie) und nie aus dem Repository (`*.pfx` steht in
+`.gitignore`).
+
+**Zeitstempel ist Pflicht.** Ohne ihn wird jede Signatur in dem Moment ungültig,
+in dem das Zertifikat abläuft — auch bei Dateien, die lange vorher gebaut
+wurden. `sign.sh` bricht ab, wenn kein Zeitstempel gesetzt werden konnte.
+
+### Grenzen des verwendeten Zertifikats
+
+Zwei Punkte, die vor dem Rollout zu klären sind:
+
+**Es ist ein persönliches Zertifikat.** Signiert wird als
+`CN=mkaltwasser.da, OU=User, OU=Tier-0` — jedes Artefakt trägt die Identität
+eines Benutzerkontos, nicht die der Organisation. Scheidet die Person aus oder
+läuft das Konto ab, hängt die Signaturkette daran. Für Software, die auf einer
+ganzen Flotte läuft, ist ein auf die Organisation ausgestelltes Zertifikat der
+richtige Weg.
+
+**Die ausstellende CA ist intern.** `CN=OT-CA` ist eine private CA. Windows
+prüft die Signatur korrekt, verwirft die Kette aber auf jeder Maschine, die
+diese CA nicht kennt:
+
+```
+Status : UnknownError
+         Eine Zertifikatkette wurde zwar verarbeitet, endete jedoch mit einem
+         Stammzertifikat, das beim Vertrauensanbieter nicht als
+         vertrauenswürdig gilt
+```
+
+Nach Import von `OT-CA` in `Cert:\LocalMachine\Root` meldet dieselbe Datei
+`Status: Valid`. Auf domänengebundenen Maschinen verteilt die GPO die CA
+ohnehin — **die nicht domänengebundenen Maschinen, für die dieser Agent
+überhaupt gebaut wird, haben sie in der Regel nicht.** Dort bleibt die Datei im
+Sinne von Windows unsigniert, und Defender/SmartScreen behandeln sie
+entsprechend.
+
+Ein internes Zertifikat hilft trotzdem: WDAC- und AppLocker-Regeln können auf
+den Herausgeber verweisen, statt auf Dateipfade oder Hashes. Für
+SmartScreen-Reputation braucht es dagegen ein öffentlich vertrautes
+(idealerweise EV-)Zertifikat.
+
 ## Tests
 
 ```bash
@@ -255,7 +311,6 @@ Go ist zum Entwickeln nicht lokal nötig — der Container reicht.
 * **Container als CI.** `virtualization: "container"` wird erkannt, aber weiter
   als PC/Server behandelt. Ob Container überhaupt in die CMDB gehören, ist eine
   offene fachliche Frage — bis dahin lieber sichtbar als still verworfen.
-* **Code-Signing (Rest von M5).** Die Binaries und das MSI sind **nicht
-  signiert**. Ein unsignierter Dienst, der Hardware ausliest und nach außen
-  meldet, wird von Defender und EDR als Schadsoftware eingestuft — das gehört vor
-  den Pilotbetrieb geklärt, nicht danach.
+* **Öffentlich vertrautes Zertifikat.** Signiert wird derzeit mit einem
+  Zertifikat der internen `OT-CA`. Auf Maschinen, die diese CA nicht kennen,
+  gilt die Datei als unsigniert — siehe Abschnitt „Code-Signing".
