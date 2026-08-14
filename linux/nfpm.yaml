@@ -1,0 +1,46 @@
+# Paketdefinition fuer nfpm (.deb und .rpm aus einer Quelle).
+#
+# Bauen:
+#   nfpm package -f deploy/linux/nfpm.yaml -p deb -t dist/
+#   nfpm package -f deploy/linux/nfpm.yaml -p rpm -t dist/
+
+name: itop-agent
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: admin
+priority: optional
+maintainer: Jan Kaluza <mail@jankaluza.de>
+description: |
+  Inventar-Agent fuer die iTop-CMDB.
+  Sammelt Hardware-, Betriebssystem- und Softwaredaten und meldet sie an den
+  itop-collector, der sie ueber Synchro Data Sources in die CMDB schreibt.
+vendor: Jan Kaluza
+homepage: https://github.com/jankaluza/itop-agent
+license: proprietary
+
+contents:
+  - src: dist/itop-agent
+    dst: /usr/bin/itop-agent
+    file_info:
+      mode: 0755
+
+  - src: deploy/linux/itop-agent.service
+    dst: /lib/systemd/system/itop-agent.service
+
+  # Als config markiert: ein Paketupdate ueberschreibt eine angepasste
+  # Konfiguration dann nicht, sondern legt die neue Fassung daneben.
+  - src: deploy/linux/itop-agent.conf
+    dst: /etc/itop-agent.conf
+    type: config|noreplace
+    file_info:
+      mode: 0640
+
+  - dst: /var/lib/itop-agent
+    type: dir
+    file_info:
+      mode: 0700
+
+scripts:
+  postinstall: deploy/linux/postinstall.sh
+  preremove: deploy/linux/preremove.sh

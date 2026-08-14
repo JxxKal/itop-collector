@@ -1,0 +1,222 @@
+# iTop-Stack "itop-test" auf itop.example.internal (Docker 29.7.1).
+#
+# Aufgebaut nach der Upgrade-Doku von svo3041-ot/itop-dev. Abweichungen, die
+# diese Umgebung erzwingt, sind jeweils an Ort und Stelle kommentiert:
+#
+#   - Stack-Name itop-test statt itop-dev  -> Container heissen itop-test-itop-1 usw.
+#   - Host-Port 8889 statt 8888            -> 8888 ist hier von Guacamole belegt
+#   - Zertifikate aus /opt/itop-test/certs -> /opt/itop/certs gibt es hier nicht
+#   - keine Proxy-Variablen                -> dieser Host hat direkten Internetzugang
+#   - Neuinstallation, kein Upgrade        -> es gibt keine Alt-Volumes zu erben
+#
+# Uebernommen aus der Doku (und der eigentliche Grund fuer das ganze Dokument):
+#   - image:            eigenes, versioniertes Image statt otbude/ot:itop
+#   - itop-etc          NICHT gemountet (siehe Kommentar unten - kritisch!)
+#   - itop-log          NICHT gemountet
+#   - itop-data         benanntes Volume statt anonymes
+#   - itop-cron         eigener Service statt Supervisor im Frontend-Container
+#   - tty: true         entfaellt
+#   - mariadb           auf eine Major-Version gepinnt
+
+services:
+  itop:
+    # Kein gleitender Tag. Bei jedem Rebuild neuen Tag vergeben, dann ist ein
+    # Rollback ein Einzeiler statt einer Rekonstruktion.
+    image: itop:3.2.3-2-php8.3-r3
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
+    environment:
+      - DB_ENV_MYSQL_DATABASE=itop
+      - DB_ENV_MYSQL_USER=itop
+      - DB_ENV_MYSQL_PASSWORD=${ITOP_DB_PASSWORD}
+      # Die Proxy-Variablen aus der Vorlage entfallen: dieser Host erreicht das
+      # Internet direkt. Mit gesetztem http_proxy wuerde iTop beim Newsroom-
+      # und Hub-Abruf in einen Timeout laufen statt zu funktionieren.
+    volumes:
+      # WICHTIG: kein Mount auf /etc.
+      # itop-etc:/etc/ hat im alten Stack das komplette /etc des Containers
+      # persistiert. Damit hat ein Image-Update NIE eine aktualisierte Apache-,
+      # PHP- oder OS-Konfiguration mitgebracht - das Update lief durch und
+      # bewirkte nichts. Mit dem neuen Image wuerde das alte /etc sogar die
+      # frische Apache-Konfiguration ueberschreiben und den Container zerlegen.
+      - itop-conf:/var/www/html/conf/
+      - itop-env:/var/www/html/env-production/
+      - itop-data:/var/www/html/data/
+      - itop-backups:/var/www/html/data/backups/
+      #
+      # Bewusst KEIN Volume auf /var/www/html/extensions/. Die Extensions
+      # stecken im Image. Docker kopiert Image-Inhalte nur in ein LEERES Named
+      # Volume - ein einmal gefuelltes Volume wuerde die gebackenen Extensions
+      # danach vollstaendig verdecken, ohne jede Fehlermeldung.
+      #
+      # Der Bind-Mount fuer die Eigenentwicklung bleibt: er ueberlagert die
+      # gebackene Fassung und erlaubt Iteration ohne Rebuild. Auf Produktiv
+      # weglassen, dann gilt die Version aus dem Image.
+      - /opt/itop-test/extensions/custom-service-software:/var/www/html/extensions/custom-service-software
+      # Traegerfelder fuer den itop-agent-Sync (agent_guid, agent_last_seen an
+      # FunctionalCI). Gleiches Muster wie oben: Bind-Mount statt ins Image
+      # gebacken, damit das Datenmodell ohne Rebuild iteriert werden kann.
+      - /opt/itop-test/extensions/custom-agent-inventory:/var/www/html/extensions/custom-agent-inventory
+      - /opt/itop-test/php/99-itop.ini:/usr/local/etc/php/conf.d/99-itop.ini:ro
+    networks:
+      - itop
+    restart: unless-stopped
+
+  # iTops Hintergrundverarbeitung. Im alten Image lief das vermutlich per
+  # Supervisor im selben Container (daher tty: true). Als eigener Service ist
+  # sichtbar, ob es laeuft, und ein Absturz reisst das Frontend nicht mit.
+  #
+  # Laeuft gegen den iTop-Benutzer "syncagent". Ohne laufenden Cron passiert bei
+  # Synchro Data Sources nichts: synchro_exec wird nie ausgeloest, Importe
+  # bleiben liegen und die Obsoleszenz-Markierung greift nicht.
+  #
+  # Die Zugangsdaten stehen als Klartext im Compose-File und landen ueber die
+  # Kommandozeile in "ps" und "docker inspect". Fuer eine Testinstanz vertretbar;
+  # produktiv gehoert das in Docker Secrets oder eine env_file ausserhalb des
+  # Stack-Repos.
+  itop-cron:
+    image: itop:3.2.3-2-php8.3-r3
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
+    # ZWINGEND www-data, sonst legt der Cron root-eigene Dateien im gemeinsamen
+    # Volume itop-data an. Apache laeuft als www-data und kann sie danach nicht
+    # mehr beschreiben - der Fehler taucht als Twig-Cache-Absturz auf:
+    #
+    #   Unable to create the cache directory (data/cache-production/twig/templates/..)
+    #
+    # Der Entrypoint korrigiert die Rechte nur beim Start; ein dauerhaft als root
+    # laufender Cron erzeugt sie danach immer wieder neu. Die Vorlage macht den
+    # Cron zu einem eigenen Service, sagt aber nicht, unter welchem Benutzer er
+    # laufen muss - genau daran ist es hier gescheitert.
+    user: "www-data"
+    depends_on:
+      - itop-db
+    command: >
+      sh -c 'while true; do
+        php /var/www/html/webservices/cron.php --auth_user=$${ITOP_CRON_USER} --auth_pwd=$${ITOP_CRON_PWD} || true;
+        sleep 60;
+      done'
+    environment:
+      - "ITOP_CRON_USER=${ITOP_USER}"
+      - "ITOP_CRON_PWD=${ITOP_PASSWORD}"
+    volumes:
+      - itop-conf:/var/www/html/conf/
+      - itop-env:/var/www/html/env-production/
+      - itop-data:/var/www/html/data/
+      # Extensions kommen aus dem Image - kein Volume, sonst weicht der
+      # Cron-Container vom Frontend ab.
+      - /opt/itop-test/extensions/custom-service-software:/var/www/html/extensions/custom-service-software
+      # Traegerfelder fuer den itop-agent-Sync (agent_guid, agent_last_seen an
+      # FunctionalCI). Gleiches Muster wie oben: Bind-Mount statt ins Image
+      # gebacken, damit das Datenmodell ohne Rebuild iteriert werden kann.
+      - /opt/itop-test/extensions/custom-agent-inventory:/var/www/html/extensions/custom-agent-inventory
+    networks:
+      - itop
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Collector fuer den itop-agent.
+  #
+  # Nimmt Agent-Meldungen per HTTPS entgegen und schreibt sie ueber die Synchro
+  # Data Sources in die CMDB - nie per core/update, weil nur ueber den Import
+  # die Update-Policy pro Attribut greift.
+  #
+  # Laeuft im selben Netz wie iTop und spricht den Webcontainer direkt an
+  # (http://itop:80), nicht ueber den nginx auf 8889. Das spart die
+  # TLS-Terminierung im internen Verkehr und macht ITOP_SKIP_TLS_VERIFY hier
+  # ueberfluessig.
+  # ---------------------------------------------------------------------------
+  itop-collector:
+    image: itop-collector:0.3.1
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
+    depends_on:
+      - itop
+    environment:
+      - COLLECTOR_LISTEN=:8080
+      # Einmal-Token fuer das Enrollment. Der Installer bringt es mit; ein Agent
+      # tauscht es gegen ein geraetespezifisches Token. Fuer den Testbetrieb
+      # hier im Klartext - produktiv gehoert es in ein Docker Secret.
+      - COLLECTOR_ENROLL_TOKEN=${COLLECTOR_ENROLL_TOKEN}
+      - COLLECTOR_REGISTRY=/var/lib/itop-collector/devices.json
+      - ITOP_URL=http://itop:80
+      - ITOP_USER=${ITOP_USER}
+      - ITOP_PASSWORD=${ITOP_PASSWORD}
+      # Organisation fuer neu angelegte CIs. Greift nur bei der Anlage
+      # (update_policy=write_if_empty an org_id).
+      - ITOP_DEFAULT_ORG_ID=${ITOP_DEFAULT_ORG_ID}
+      # Zuordnung Zielklasse -> Synchro Data Source. Jede Klasse braucht eine
+      # eigene, weil scope_class ein Einzelwert ist.
+      - ITOP_DS_PC=1
+      - ITOP_DS_SERVER=2
+      - ITOP_DS_VM=3
+      # Nur noetig, wenn der Collector iTop ueber HTTPS mit selbstsigniertem
+      # Zertifikat anspricht. Ueber das interne Netz nicht gebraucht - bleibt
+      # deshalb aus. Der Client warnt beim Start, wenn er eingeschaltet ist.
+      - ITOP_SKIP_TLS_VERIFY=0
+    volumes:
+      - itop-collector-data:/var/lib/itop-collector
+    ports:
+      - "${COLLECTOR_PORT:-8890}:8080"
+    networks:
+      - itop
+    restart: unless-stopped
+
+  itop-proxy:
+    image: nginx:1.27
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
+    depends_on:
+      - itop
+    ports:
+      # 8888 waere laut Vorlage richtig, ist auf diesem Host aber von Guacamole
+      # belegt. Container-seitig bleibt es 8888, nach aussen 8889.
+      - "${ITOP_HTTPS_PORT:-8889}:8888"
+    volumes:
+      - /opt/itop-test/nginx/itop.conf:/etc/nginx/conf.d/default.conf:ro
+      # Selbstsigniert erzeugt (siehe /opt/itop-test/certs/README). Gegen ein
+      # echtes Zertifikat austauschen heisst: Dateien ersetzen, Container neu
+      # starten - der Stack muss dafuer nicht angefasst werden.
+      - /opt/itop-test/certs/itop.fullchain.crt:/etc/nginx/certs/itop.fullchain.crt:ro
+      - /opt/itop-test/certs/itop.key:/etc/nginx/certs/itop.key:ro
+    networks:
+      - itop
+    restart: unless-stopped
+
+  itop-db:
+    # Vorher "mariadb" ohne Tag - ein Pull konnte jederzeit eine neue
+    # Major-Version ziehen. MariaDB unterstuetzt keine Downgrades des
+    # Datenverzeichnisses: ein versehentlicher Sprung ist ohne Restore
+    # nicht rueckgaengig zu machen.
+    #
+    # Serverversion gegenpruefen mit:
+    #   docker exec itop-test-itop-db-1 mariadb -uitop -pitop -e "SELECT VERSION();"
+    #
+    # 12.2 statt 12.2.x, damit Patch-Releases beim naechsten Pull mitkommen.
+    # Wer strikte Reproduzierbarkeit will, pinnt die volle Version und zieht
+    # bewusst nach. Auf keinen Fall auf 12.3 springen, ohne es vorher auf einer
+    # Kopie zu testen.
+    image: mariadb:12.2
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
+    environment:
+      - MYSQL_DATABASE=itop
+      - MYSQL_USER=itop
+      - MYSQL_PASSWORD=${ITOP_DB_PASSWORD}
+      - MYSQL_RANDOM_ROOT_PASSWORD=yes
+    networks:
+      - itop
+    volumes:
+      - itop-db:/var/lib/mysql
+    restart: unless-stopped
+
+networks:
+  itop:
+
+volumes:
+  itop-collector-data:
+  itop-env:
+  itop-backups:
+  itop-db:
+  itop-conf:
+  itop-data:

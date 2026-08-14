@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<itop_design xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="3.2">
+  <!--
+    ACHTUNG: vor <itop_design> darf KEIN Kommentar stehen. iTop liest das
+    Wurzelelement mit $oDocument->childNodes->item(0) (ModelFactory::LoadModule),
+    und LoadDelta() steigt bei allem, was kein DOMElement ist, kommentarlos aus.
+    Ein Kommentar an dieser Stelle laesst das Setup fehlerfrei durchlaufen und
+    erzeugt trotzdem keine einzige Klasse. (Gelernt an custom-service-software.)
+
+    Zweck: Traegerfelder fuer den itop-agent-Sync.
+
+    WARUM AN FunctionalCI:
+    Die Zielklassen des Agents sind PC, Server und VirtualMachine. Deren
+    Vererbung in iTop 3.2:
+
+        FunctionalCI ─┬─ PhysicalDevice ── ConnectableCI ─┬─ PC
+                      │                                   └─ DatacenterDevice ── Server
+                      └─ VirtualDevice ── VirtualMachine
+
+    PhysicalDevice deckt PC und Server ab, aber NICHT VirtualMachine - die haengt
+    unter VirtualDevice. Gemeinsamer Vorfahr aller drei ist erst FunctionalCI.
+    Das Feld dort einmal zu definieren ist sauberer, als es dreimal zu wiederholen:
+    jede Synchro Data Source kann denselben Reconciliation-Key benutzen, und ein
+    spaeterer vierter Zieltyp erbt ihn automatisch mit.
+
+    Preis: das Attribut existiert technisch an allen CI-Klassen, auch dort wo es
+    fachlich sinnlos ist. Es ist nullable und taucht in keinem Formular auf, also
+    stoert es nicht.
+
+    KEINE unique_rule auf agent_guid - BEWUSST:
+    Meilenstein M0 will das Konfliktverhalten beobachten. Eine
+    Datenbank-Eindeutigkeit wuerde den Fall "zwei CIs mit derselben GUID" schon
+    beim Schreiben abfangen, statt ihn iTops Reconciliation vorzulegen. Nach M0
+    ist eine unique_rule sinnvoll - dann aber als bewusste Entscheidung mit
+    bekanntem Verhalten.
+
+    Update-Sicherheit: diese Datei definiert ausschliesslich NEUE Felder
+    (_delta="define") an einer bestehenden Klasse (_delta="must_exist"). Kein
+    Core-Feld wird ueberschrieben, ein iTop-Update kann hier nicht kollidieren.
+  -->
+  <classes>
+
+    <class id="FunctionalCI" _delta="must_exist">
+      <fields>
+
+        <!--
+          Primaerer Reconciliation-Key. Die GUID wird vom Agent erzeugt und
+          ueberlebt Umbenennung, aber nicht Reimaging - genau so gewollt.
+          Nach der Anlage nie wieder aendern (Update-Policy in der Datasource:
+          "nur bei Anlage schreiben").
+        -->
+        <field id="agent_guid" xsi:type="AttributeString" _delta="define">
+          <sql>agent_guid</sql>
+          <default_value/>
+          <is_null_allowed>true</is_null_allowed>
+        </field>
+
+        <!--
+          Zeitpunkt der letzten Agent-Meldung. Gegenstueck zu agent_guid:
+          aendert sich bei JEDEM Sync. Die beiden zusammen erlauben in M0, zwei
+          verschiedene Update-Policies an echten Daten zu pruefen, statt sie nur
+          zu konfigurieren.
+
+          Nicht zu verwechseln mit der Obsoleszenz-Logik der Synchro Data Source
+          selbst - die haengt am Replica-Datum, nicht an diesem Feld. Dieses Feld
+          ist das, was ein Mensch im CI sieht.
+        -->
+        <field id="agent_last_seen" xsi:type="AttributeDateTime" _delta="define">
+          <sql>agent_last_seen</sql>
+          <default_value/>
+          <is_null_allowed>true</is_null_allowed>
+        </field>
+
+      </fields>
+    </class>
+
+  </classes>
+</itop_design>

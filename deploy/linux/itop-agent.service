@@ -1,0 +1,39 @@
+[Unit]
+Description=iTop Inventory Agent
+Documentation=https://github.com/jankaluza/itop-agent
+# Erst starten, wenn das Netz wirklich steht. Der Agent wartet zwar zusaetzlich
+# 2-7 Minuten, aber ohne diese Abhaengigkeit laeuft der erste Versuch beim Boot
+# regelmaessig ins Leere.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/itop-agent
+
+# Konfiguration aus derselben Datei, die das Paket anlegt. Der Agent liest sie
+# auch selbst - der Eintrag hier sorgt dafuer, dass die Werte zusaetzlich als
+# Umgebungsvariablen anliegen, was die Fehlersuche erleichtert.
+EnvironmentFile=-/etc/itop-agent.conf
+
+# root ist noetig: /sys/class/dmi/id/product_serial ist nur fuer root lesbar,
+# und /var/lib/itop-agent haelt das Device-Token mit 0600.
+User=root
+
+Restart=always
+RestartSec=60
+
+# Der Agent liest ausschliesslich und schreibt nur in sein eigenes
+# Zustandsverzeichnis. Alles andere darf ihm verwehrt bleiben.
+ProtectSystem=strict
+ProtectHome=yes
+StateDirectory=itop-agent
+ReadWritePaths=/var/lib/itop-agent
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

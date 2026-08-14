@@ -1,0 +1,14 @@
+# Gebaute Binaries und Pakete - die liegen als Release-Asset, nicht im Baum.
+/dist/
+*.exe
+*.deb
+*.rpm
+
+# Echte Konfiguration mit Zugangsdaten
+.env
+/deploy/itop-stack/certs/
+
+# Zustand des Agents (GUID, Device-Token)
+devices.json
+agent.guid
+device.token
