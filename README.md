@@ -3,6 +3,10 @@
 Inventar-Agent und Collector für die iTop-CMDB. Siehe `PROJECT.md` für Ziel,
 Architektur und Roadmap.
 
+> **Einführung in eine bestehende iTop-Installation:**
+> [docs/Rollout-Runbook.md](docs/Rollout-Runbook.md) — Schritt für Schritt, mit
+> Backup, Ausfallzeit-Hinweisen und Rückweg.
+
 **Stand:** M0–M5 sind durch und auf echten Maschinen verifiziert — Windows 11 und
 Debian 13 melden über den Collector in eine iTop-3.2.3-Instanz, verteilt per MSI
 bzw. `.deb`. Offen sind das Code-Signing und das Software-Inventar auf der
@@ -135,7 +139,7 @@ Konfiguration ausschließlich über Umgebungsvariablen:
 jedes Gerät unbekannt und müsste sich neu registrieren.
 
 Ein lauffähiges Beispiel steht im Stack `itop-test` auf itop.example.internal
-(`/opt/itop/docker-compose.yml`, Service `itop-collector`, Port 8890).
+(`/opt/itop-test/docker-compose.yml`, Service `itop-collector`, Port 8890).
 
 ## IP-Adressen
 

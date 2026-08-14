@@ -25,7 +25,7 @@ Was in diesem Repository liegt und wie es zusammenhängt.
 | `deploy/linux/` | systemd-Unit, nfpm-Definition für `.deb`/`.rpm` |
 | `deploy/itop-stack/` | Kompletter iTop-Stack: Dockerfile, Compose, nginx, PHP, Datasource-Skript |
 | `deploy/itop-extensions/` | iTop-Datenmodell-Erweiterung `custom-agent-inventory` |
-| `docs/` | Auswertung von Meilenstein M0 |
+| `docs/` | Rollout-Runbook und Auswertung von Meilenstein M0 |
 
 ## Schnellstart
 
@@ -46,6 +46,14 @@ make all        # Agent für Linux und Windows, Collector
 make check      # gofmt, vet für BEIDE Plattformen, Tests
 make packages   # .deb und .rpm
 ```
+
+## Einführung in eine bestehende iTop-Installation
+
+Das vollständige Vorgehen steht in **[docs/Rollout-Runbook.md](docs/Rollout-Runbook.md)**:
+Voraussetzungen, Backup, Setup-Lauf mit Ausfallzeit, Data Sources,
+Softwaregruppen, Collector, Agenten-Rollout, Abnahme und Rückweg.
+
+Die Kurzfassung:
 
 ## Reihenfolge bei der Einrichtung
 
