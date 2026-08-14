@@ -11,7 +11,7 @@ Aufruf:  python3 mk_datasource.py <Klasse> <tabellenname>
 """
 import sys
 
-sys.path.insert(0, "/opt/itop-test")
+sys.path.insert(0, "/opt/itop")
 from itop_rest import call  # noqa: E402
 
 # Reconciliation ausschliesslich ueber agent_guid.

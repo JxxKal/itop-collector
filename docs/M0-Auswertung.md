@@ -319,7 +319,7 @@ tun. Ohne diesen Schritt wächst die CMDB bei jedem Reimaging um eine Dublette.
 **Offene Entscheidung aus §11 beantwortet:** *„Custom-Feld `agent_guid` am CI —
 wer pflegt die Anpassung?"* → Erledigt als Extension `custom-agent-inventory`
 (`agent_guid`, `agent_last_seen` an `FunctionalCI`). Liegt als Bind-Mount unter
-`/opt/itop-test/extensions/`, iterierbar ohne Image-Rebuild. Bewusst an
+`/opt/itop/extensions/`, iterierbar ohne Image-Rebuild. Bewusst an
 `FunctionalCI`, weil `PhysicalDevice` zwar `PC` und `Server` abdeckt, aber nicht
 `VirtualMachine` — die hängt unter `VirtualDevice`.
 
@@ -368,13 +368,13 @@ Reimaging-Befund.
 Alle Testdaten und Skripte liegen auf dem Host:
 
 ```
-/opt/itop-test/m0/01-anlage.csv      Test 1
-/opt/itop-test/m0/02-update.csv      Test 2
-/opt/itop-test/m0/03-konflikt.csv    Test 3 / 3b
-/opt/itop-test/m0/04-reimaging.csv   Test 3c
-/opt/itop-test/m0/05-obsolet.csv     Test 4
-/opt/itop-test/m0/m0.py              Zustandsanzeige
-/opt/itop-test/itop_rest.py          REST-Client
+/opt/itop/m0/01-anlage.csv      Test 1
+/opt/itop/m0/02-update.csv      Test 2
+/opt/itop/m0/03-konflikt.csv    Test 3 / 3b
+/opt/itop/m0/04-reimaging.csv   Test 3c
+/opt/itop/m0/05-obsolet.csv     Test 4
+/opt/itop/m0/m0.py              Zustandsanzeige
+/opt/itop/itop_rest.py          REST-Client
 ```
 
 Import:

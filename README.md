@@ -135,7 +135,7 @@ Konfiguration ausschließlich über Umgebungsvariablen:
 jedes Gerät unbekannt und müsste sich neu registrieren.
 
 Ein lauffähiges Beispiel steht im Stack `itop-test` auf itop.example.internal
-(`/opt/itop-test/docker-compose.yml`, Service `itop-collector`, Port 8890).
+(`/opt/itop/docker-compose.yml`, Service `itop-collector`, Port 8890).
 
 ## IP-Adressen
 
@@ -227,6 +227,60 @@ Dazu zwei Eigenheiten von iTop, über die der erste Versuch stolperte:
 | DHCP-Adresse gemeldet | nicht im IPAM angelegt, `ipaddress_id` unberührt |
 | DHCP-Maschine mit IPAM-Adresse | IPAM-Zuweisung überlebt die Agent-Meldung |
 | Zwei Maschinen, dieselbe statische IP | zweite Verknüpfung verweigert und protokolliert |
+
+## Softwaregruppen statt Einzelversionen
+
+Der Agent meldet, was das Gerät hergibt — „Microsoft .NET Framework 4.8.1",
+„ASP.NET Core Runtime 8.0.11", „Google Chrome". In der CMDB landet davon nur
+eine überschaubare Gruppenliste: 200 .NET-Versionen zu pflegen ist niemandes
+Ziel.
+
+**Die Regeln stehen in iTop, nicht im Code.** Jede Gruppe ist ein
+`Software`-Katalogeintrag; die Zuordnungsmuster liegen im Feld
+`agent_match_patterns`. Eine Gruppe ergänzen oder ein Muster nachschärfen
+passiert damit in iTop — am Collector muss nichts neu ausgerollt werden. Nur
+Einträge **mit** Mustern nehmen am Abgleich teil; Software, die jemand aus
+anderen Gründen anlegt, bleibt unberührt.
+
+### Mustersyntax
+
+| Zeile | Bedeutung |
+|---|---|
+| `.net` | trifft, wenn der Text im gemeldeten Namen vorkommt (Groß-/Kleinschreibung egal) |
+| `!Java Auto Updater` | schließt aus — schlägt jeden Einschluss |
+| `/^microsoft edge( \|$)/` | regulärer Ausdruck, wenn ein Teiltreffer zu weit greift |
+| `# Kommentar` | wird übersprungen |
+
+Der Punkt in `.net` ist wesentlich: ohne ihn träfe das Muster auch „Telnet".
+Der reguläre Ausdruck bei Edge ebenso — „Edge" allein steckt auch in
+„Edge Diagnostics Adapter".
+
+### Was in iTop entsteht
+
+Je Gruppe, deren Muster auf **irgendein** installiertes Programm passt, genau
+**eine** `SoftwareInstance` am CI. Zwanzig .NET-Versionen ergeben eine
+Verknüpfung, nicht zwanzig. Verschwindet die Software, verschwindet die
+Verknüpfung.
+
+Zwei Schutzmaßnahmen, beide an der Instanz geprüft:
+
+* **Fremde Verknüpfungen bleiben unberührt.** Der Collector fasst nur
+  Verknüpfungen zu Katalogeinträgen mit Mustern an. Eine von Hand gepflegte
+  `SoftwareInstance` überlebt jede Meldung.
+* **Leeres Inventar ändert nichts.** Meldet ein Agent keine Software — ältere
+  Version, hängender Paketmanager — wird nichts entfernt. Schweigen ist keine
+  Aussage.
+
+### Liste erweitern
+
+```bash
+curl -s -H "Authorization: Bearer <einmal-token>" \
+  http://<collector>:8890/unmatched
+```
+
+Liefert die Programmnamen, die in keine Gruppe fallen, absteigend nach
+Häufigkeit. Was oben steht, lohnt sich als nächste Gruppe oder als zusätzliches
+Muster. Die Startliste legt `deploy/itop-stack/software_groups.py` an.
 
 ## Code-Signing
 

@@ -74,5 +74,32 @@
       </fields>
     </class>
 
+    <!-- ==================================================================
+         Zuordnungsmuster am Software-Katalog.
+
+         Die Aufgabe: der Agent meldet rohe Programmnamen ("Microsoft .NET
+         Framework 4.8.1", "ASP.NET Core Runtime 8.0.11", "Google Chrome").
+         In der CMDB soll davon nur eine ueberschaubare Liste von Gruppen
+         ankommen - nicht 200 Einzelversionen.
+
+         Statt diese Regeln im Collector zu verdrahten, stehen sie HIER, am
+         Katalogeintrag selbst. Wer eine Gruppe ergaenzen oder ein Muster
+         nachschaerfen will, tut das in iTop; am Collector muss nichts neu
+         ausgerollt werden. Damit bleibt iTop auch fuer diese Regeln das
+         fuehrende System.
+
+         Nur Katalogeintraege MIT Mustern nehmen am Abgleich teil. Software,
+         die jemand aus anderen Gruenden anlegt, bleibt unberuehrt.
+         ================================================================== -->
+    <class id="Software" _delta="must_exist">
+      <fields>
+        <field id="agent_match_patterns" xsi:type="AttributeText" _delta="define">
+          <sql>agent_match_patterns</sql>
+          <default_value/>
+          <is_null_allowed>true</is_null_allowed>
+        </field>
+      </fields>
+    </class>
+
   </classes>
 </itop_design>

@@ -88,6 +88,7 @@ type CI struct {
 	Name      string
 	AgentGUID string
 	Serial    string
+	OrgID     int
 }
 
 func (c *ITopClient) rest(payload map[string]any) (*restResponse, error) {
@@ -151,12 +152,14 @@ func (c *ITopClient) query(class, where, fields string) ([]CI, error) {
 	out := make([]CI, 0, len(res.Objects))
 	for _, o := range res.Objects {
 		id, _ := strconv.Atoi(o.Fields["id"])
+		orgID, _ := strconv.Atoi(o.Fields["org_id"])
 		out = append(out, CI{
 			ID:        id,
 			Class:     o.Class,
 			Name:      o.Fields["name"],
 			AgentGUID: o.Fields["agent_guid"],
 			Serial:    o.Fields["serialnumber"],
+			OrgID:     orgID,
 		})
 	}
 	return out, nil
@@ -176,7 +179,7 @@ func (c *ITopClient) FindByAgentGUID(guid string) ([]CI, error) {
 	// serialnumber ist hier NICHT abfragbar - das Attribut sitzt erst an
 	// PhysicalDevice. Fuer die Existenzpruefung wird es auch nicht gebraucht.
 	return c.query("FunctionalCI", fmt.Sprintf("agent_guid = '%s'", oqlEscape(guid)),
-		"id,name,agent_guid")
+		"id,name,agent_guid,org_id")
 }
 
 // FindBySerial sucht klassenuebergreifend nach einer Seriennummer.

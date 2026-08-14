@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/JxxKal/itop-collector/internal/report"
@@ -29,16 +31,28 @@ type Config struct {
 	// DataSources bildet Zielklasse -> Synchro-Data-Source-ID ab.
 	DataSources map[TargetClass]int
 
+	// SoftwareGroupTTL bestimmt, wie lange der Software-Katalog
+	// zwischengespeichert wird. Die Gruppenliste aendert sich selten, Meldungen
+	// kommen dagegen von jeder Maschine. 0 bedeutet 10 Minuten.
+	SoftwareGroupTTL time.Duration
+
 	ITop ITopOptions
 }
 
 // Service ist der Collector.
 type Service struct {
-	cfg  Config
-	reg  *Registry
-	itop *ITopClient
-	refs *refCache
-	log  *slog.Logger
+	cfg    Config
+	reg    *Registry
+	itop   *ITopClient
+	refs   *refCache
+	groups *groupCache
+	log    *slog.Logger
+
+	// unmatched sammelt Programmnamen, die in keine Gruppe fallen - die
+	// Grundlage zum Erweitern der Musterliste. Nur im Speicher; nach einem
+	// Neustart fuellt sich die Liste mit der naechsten Melderunde wieder.
+	unmatchedMu sync.Mutex
+	unmatched   map[string]int
 }
 
 // New baut den Service.
@@ -55,11 +69,13 @@ func New(cfg Config, log *slog.Logger) (*Service, error) {
 	}
 	log.Info("Registry geladen", "pfad", cfg.RegistryPath, "geraete", reg.Count())
 	return &Service{
-		cfg:  cfg,
-		reg:  reg,
-		itop: NewITopClient(cfg.ITop, log),
-		refs: newRefCache(),
-		log:  log,
+		cfg:       cfg,
+		reg:       reg,
+		itop:      NewITopClient(cfg.ITop, log),
+		refs:      newRefCache(),
+		groups:    newGroupCache(cfg.SoftwareGroupTTL),
+		unmatched: map[string]int{},
+		log:       log,
 	}, nil
 }
 
@@ -70,6 +86,7 @@ func (s *Service) Routes() http.Handler {
 	mux.HandleFunc("POST /report", s.handleReport)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /conflicts", s.handleConflicts)
+	mux.HandleFunc("GET /unmatched", s.handleUnmatched)
 	return mux
 }
 
@@ -238,6 +255,14 @@ func (s *Service) Ingest(dev *Device, rep *report.Report) (reportResponse, error
 			"creation_errors", imp.CreationErrors, "reconcile_errors", imp.ReconcileErrors,
 			"hinweis", "kann von aelteren Meldungen stammen; /conflicts zeigt die Liste")
 	}
+	// Softwaregruppen zuordnen. Wie die IP nach dem Import, weil das CI dafuer
+	// existieren muss. Ein Fehler darf die Meldung nicht scheitern lassen - die
+	// Inventardaten sind bereits in iTop.
+	if err := s.SyncSoftwareGroups(guid, rep.Software); err != nil {
+		s.log.Warn("Softwaregruppen konnten nicht zugeordnet werden",
+			"agent_guid", guid, "fehler", err)
+	}
+
 	// Primaere IP nach dem Import setzen: sie braucht das CI, und das entsteht
 	// erst durch den Import. Ein Fehler hier darf die Meldung nicht scheitern
 	// lassen - die Inventardaten sind bereits in iTop.
@@ -265,6 +290,35 @@ func (s *Service) Ingest(dev *Device, rep *report.Report) (reportResponse, error
 
 func (s *Service) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "devices": s.reg.Count()})
+}
+
+// handleUnmatched zeigt Programmnamen, die in keine Gruppe fallen.
+//
+// Absteigend nach Haeufigkeit: was oben steht, lohnt sich als naechstes als
+// Gruppe oder zusaetzliches Muster.
+func (s *Service) handleUnmatched(w http.ResponseWriter, r *http.Request) {
+	if !constantEquals(bearer(r), s.cfg.EnrollToken) {
+		writeErr(w, http.StatusUnauthorized, "nicht berechtigt")
+		return
+	}
+	s.unmatchedMu.Lock()
+	type row struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	}
+	rows := make([]row, 0, len(s.unmatched))
+	for n, c := range s.unmatched {
+		rows = append(rows, row{Name: n, Count: c})
+	}
+	s.unmatchedMu.Unlock()
+
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Count != rows[j].Count {
+			return rows[i].Count > rows[j].Count
+		}
+		return rows[i].Name < rows[j].Name
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(rows), "software": rows})
 }
 
 // handleConflicts zeigt Replicas, die iTop nicht zuordnen konnte - die Liste,
