@@ -11,9 +11,9 @@ func TestPrimaryIP(t *testing.T) {
 		{
 			name: "statische Adresse wird genommen",
 			rep: Report{Interfaces: []Interface{
-				{Description: "eth0", IPs: []string{"192.168.1.50"}, DHCP: false},
+				{Description: "eth0", IPs: []string{"192.0.2.50"}, DHCP: false},
 			}},
-			want: "192.168.1.50",
+			want: "192.0.2.50",
 		},
 		{
 			// Der Kern der Anforderung: DHCP-Adressen gehoeren nicht in die CMDB.
@@ -27,9 +27,9 @@ func TestPrimaryIP(t *testing.T) {
 			name: "statisch schlaegt DHCP, unabhaengig von der Reihenfolge",
 			rep: Report{Interfaces: []Interface{
 				{Description: "eth0", IPs: []string{"10.0.0.5"}, DHCP: true},
-				{Description: "eth1", IPs: []string{"192.168.1.50"}, DHCP: false},
+				{Description: "eth1", IPs: []string{"192.0.2.50"}, DHCP: false},
 			}},
-			want: "192.168.1.50",
+			want: "192.0.2.50",
 		},
 		{
 			// 169.254/16 vergibt Windows, wenn kein DHCP-Server antwortet. Die
@@ -43,9 +43,9 @@ func TestPrimaryIP(t *testing.T) {
 		{
 			name: "IPv6 zaehlt nicht, IPv4 daneben schon",
 			rep: Report{Interfaces: []Interface{
-				{Description: "eth0", IPs: []string{"fe80::1", "2001:db8::1", "192.168.1.50"}, DHCP: false},
+				{Description: "eth0", IPs: []string{"fe80::1", "2001:db8::1", "192.0.2.50"}, DHCP: false},
 			}},
-			want: "192.168.1.50",
+			want: "192.0.2.50",
 		},
 		{
 			name: "Loopback wird uebersprungen",

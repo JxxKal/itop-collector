@@ -24,7 +24,7 @@ func sampleReport() *report.Report {
 		RAMBytes:     16 * 1024 * 1024 * 1024,
 		Interfaces: []report.Interface{
 			{Description: "lo", MAC: "", IPs: []string{"127.0.0.1"}},
-			{Description: "eth0", MAC: "AA:BB:CC:00:00:01", IPs: []string{"192.168.1.10"}},
+			{Description: "eth0", MAC: "AA:BB:CC:00:00:01", IPs: []string{"192.0.2.10"}},
 		},
 	}
 }
