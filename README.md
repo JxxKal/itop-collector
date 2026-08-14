@@ -271,6 +271,27 @@ Zwei Schutzmaßnahmen, beide an der Instanz geprüft:
   Version, hängender Paketmanager — wird nichts entfernt. Schweigen ist keine
   Aussage.
 
+### Bestehenden Katalog anbinden
+
+In einer gepflegten CMDB existieren die Gruppen bereits. `software_groups.py`
+legt deshalb **standardmäßig nichts an** — es hängt nur Muster an vorhandene
+Einträge:
+
+```bash
+python3 software_groups.py --list      # Ist-Zustand, [M] = hat schon Muster
+python3 software_groups.py --dry-run   # was würde passieren
+python3 software_groups.py             # Muster setzen
+```
+
+Die Zuordnung läuft in drei Stufen, damit Schreibweisen nicht zu Dubletten
+führen: exakter Name, dann Name ohne Beachtung von Groß-/Kleinschreibung und
+Mehrfach-Leerzeichen (der Unterschied wird gemeldet), sonst **melden statt
+anlegen**. Ein zweiter Katalogeintrag, nur weil ein Name minimal anders
+geschrieben ist, wäre schlimmer als eine fehlende Zuordnung. Wirklich fehlende
+Gruppen legt `--create-missing` bewusst an.
+
+Der Lauf ist wiederholbar — beim zweiten Mal meldet er alles als unverändert.
+
 ### Liste erweitern
 
 ```bash
