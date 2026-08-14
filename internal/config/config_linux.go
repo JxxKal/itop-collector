@@ -47,6 +47,15 @@ func fromStore(key string) string {
 	return ""
 }
 
+// deleteFromStore ruehrt die Konfigurationsdatei nicht an.
+//
+// Unter Linux gehoert /etc/itop-agent.conf dem Paket bzw. der Automatisierung
+// (Ansible). Ein Programm, das seine eigene Konfigurationsdatei umschreibt,
+// bringt beim naechsten Lauf der Automatisierung Ueberraschungen. Das
+// Einmal-Token dort zu entfernen ist Aufgabe desselben Werkzeugs, das es
+// hingeschrieben hat.
+func deleteFromStore(string) error { return nil }
+
 // toStore wird unter Linux nicht gebraucht - die Datei kommt aus dem Paket.
 func toStore(key, value string) error {
 	dir := filepath.Dir(path())

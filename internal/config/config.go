@@ -18,6 +18,15 @@ const (
 	KeyCollectorURL  = "ITOP_COLLECTOR_URL"
 	KeyCACert        = "ITOP_CA_CERT"
 	KeySkipTLSVerify = "ITOP_SKIP_TLS_VERIFY"
+
+	// KeyEnrollToken haelt das Einmal-Token, bis der Agent sich damit
+	// registriert hat. Danach loescht er es - es ist einmalig und hat im
+	// Dauerbetrieb nichts mehr auf dem Geraet zu suchen.
+	//
+	// Der Installer (MSI, GPO, Ansible) hinterlegt es hier, statt es dem Agent
+	// als Argument mitzugeben. So laesst sich unbeaufsichtigt ausrollen, ohne
+	// dass das Token in Prozesslisten oder Skripten auftaucht.
+	KeyEnrollToken = "ITOP_ENROLL_TOKEN"
 )
 
 // Get liefert einen Konfigurationswert oder den Vorgabewert.
@@ -33,3 +42,9 @@ func Get(key, def string) string {
 
 // Set schreibt einen Wert in den plattformeigenen Speicher.
 func Set(key, value string) error { return toStore(key, value) }
+
+// Delete entfernt einen Wert aus dem plattformeigenen Speicher.
+//
+// Gebraucht fuer das Einmal-Token nach erfolgreicher Registrierung. Fehlt der
+// Wert bereits, ist das kein Fehler.
+func Delete(key string) error { return deleteFromStore(key) }

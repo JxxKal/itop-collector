@@ -147,8 +147,38 @@ func main() {
 
 	token, err := identity.DeviceToken()
 	if err != nil {
-		log.Error("kein Device-Token vorhanden - zuerst mit -enroll registrieren", "fehler", err)
-		os.Exit(1)
+		// Selbstregistrierung: hat der Installer ein Einmal-Token hinterlegt,
+		// holt sich der Agent beim ersten Start selbst ein Device-Token.
+		//
+		// Warum nicht der Installer selbst: bei unbeaufsichtigter Verteilung
+		// (GPO, Ansible) ist der Collector zum Installationszeitpunkt nicht
+		// zwingend erreichbar. Wuerde das Enrollment dort stattfinden, schluege
+		// die ganze Installation fehl - obwohl nichts kaputt ist. So wird
+		// installiert, und der Dienst registriert sich, sobald er kann.
+		enroll := config.Get(config.KeyEnrollToken, "")
+		if enroll == "" {
+			log.Error("kein Device-Token und kein Einmal-Token vorhanden",
+				"hinweis", "mit -enroll registrieren oder ITOP_ENROLL_TOKEN hinterlegen",
+				"fehler", err)
+			os.Exit(1)
+		}
+		log.Info("kein Device-Token - registriere mit hinterlegtem Einmal-Token")
+		token, err = client.Enroll(guid, enroll)
+		if err != nil {
+			log.Error("Selbstregistrierung fehlgeschlagen", "fehler", err)
+			os.Exit(1)
+		}
+		if err := identity.SaveDeviceToken(token); err != nil {
+			log.Error("Device-Token konnte nicht gespeichert werden", "fehler", err)
+			os.Exit(1)
+		}
+		// Das Einmal-Token hat seinen Zweck erfuellt und wird entfernt. Bleibt es
+		// liegen, koennte sich damit spaeter ein beliebiges Geraet registrieren.
+		if err := config.Delete(config.KeyEnrollToken); err != nil {
+			log.Warn("Einmal-Token konnte nicht entfernt werden", "fehler", err)
+		} else {
+			log.Info("Selbstregistrierung erfolgreich, Einmal-Token entfernt", "agent_guid", guid)
+		}
 	}
 	client, err = push.New(push.Options{
 		CollectorURL:  collectorURL,

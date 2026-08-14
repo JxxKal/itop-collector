@@ -57,6 +57,36 @@ fmt:
 check: fmt vet test
 
 # .deb/.rpm bauen. Braucht nfpm; laeuft ebenfalls im Container.
+# MSI fuer Windows.
+#
+# MUSS auf einer Windows-Maschine gebaut werden - WiX unterstuetzt keine andere
+# Plattform. WiX 5 laesst sich zwar als dotnet-Werkzeug unter Linux
+# installieren, warnt aber selbst ("All behavior after this point is
+# undefined") und scheitert reproduzierbar an der Pfadpruefung:
+#
+#   error WIX0389: The Directory/@Name attribute's value, 'itop-agent',
+#                  is not a relative path.
+#
+# WINDOWS_HOST ist der Zielrechner mit SSH-Zugang; das Skript holt sich WiX 3.14
+# dort selbst als Zip, es muss nichts vorinstalliert sein.
+#
+#   make msi WINDOWS_HOST=jan@192.0.2.70
+WINDOWS_HOST ?=
+WINDOWS_BUILDDIR ?= C:/itop-build
+
+.PHONY: msi
+msi: build-windows
+ifeq ($(WINDOWS_HOST),)
+	@echo "WINDOWS_HOST fehlt, z. B.: make msi WINDOWS_HOST=jan@192.0.2.70"
+	@exit 1
+endif
+	ssh $(WINDOWS_HOST) "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path $(WINDOWS_BUILDDIR)/deploy/windows, $(WINDOWS_BUILDDIR)/dist | Out-Null\""
+	scp deploy/windows/itop-agent.wxs deploy/windows/build-msi.ps1 $(WINDOWS_HOST):$(WINDOWS_BUILDDIR)/deploy/windows/
+	scp dist/itop-agent.exe $(WINDOWS_HOST):$(WINDOWS_BUILDDIR)/dist/itop-agent.exe
+	ssh $(WINDOWS_HOST) "cd $(WINDOWS_BUILDDIR) && powershell -NoProfile -ExecutionPolicy Bypass -File deploy/windows/build-msi.ps1 -Version $(VERSION)"
+	scp $(WINDOWS_HOST):$(WINDOWS_BUILDDIR)/dist/itop-agent-$(VERSION).msi dist/
+	@echo "MSI abgeholt: dist/itop-agent-$(VERSION).msi"
+
 .PHONY: packages
 packages: build-linux
 	docker run --rm -v $(CURDIR):/src -w /src -e VERSION=$(VERSION) \

@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MSI-Paket fuer den itop-agent (WiX 3.14).
+
+  Bauen - siehe Makefile-Ziel "msi" bzw. deploy/windows/build-msi.ps1:
+      candle.exe -arch x64 -ext WixUtilExtension -dVersion=0.7.0 \
+                 -dBinPath=dist\itop-agent.exe itop-agent.wxs
+      light.exe  -ext WixUtilExtension -out itop-agent-0.7.0.msi itop-agent.wixobj
+
+  WARUM WiX 3 UND NICHT 5:
+  WiX 5 laesst sich als dotnet-Werkzeug zwar unter Linux installieren, warnt aber
+  beim Start selbst - "The WiX Toolset only supports Windows ... All behavior
+  after this point is undefined" - und scheitert dann reproduzierbar an der
+  Pfadpruefung:
+
+      error WIX0389: The Directory/@Name attribute's value, 'itop-agent',
+                     is not a relative path.
+
+  Der Wert ist ein gueltiger relativer Pfad; es ist ein Plattformfehler, kein
+  Markup-Fehler. WiX 3 ist ein reines Zip ohne Installation, laeuft mit dem in
+  Windows enthaltenen .NET Framework und ist fuer MSIs mit Diensten seit Jahren
+  der eingefahrene Weg.
+
+  Unbeaufsichtigte Installation (GPO, Intune, manuell):
+      msiexec /i itop-agent.msi /qn ^
+        COLLECTORURL=https://collector.example.internal ^
+        ENROLLTOKEN=<einmal-token>
+
+  ENTWURFSENTSCHEIDUNGEN:
+
+  Der Dienst wird DEKLARATIV ueber ServiceInstall eingerichtet, nicht ueber
+  Custom Actions, die "itop-agent.exe -install" aufrufen. Damit uebernimmt
+  Windows Ruecknahme und Deinstallation selbst - eine abgebrochene Installation
+  laesst keinen halb registrierten Dienst zurueck.
+
+  Das Enrollment findet NICHT waehrend der Installation statt: bei
+  unbeaufsichtigter Verteilung ist der Collector nicht zwingend erreichbar, und
+  ein Netzfehler wuerde die ganze Installation scheitern lassen. Stattdessen
+  hinterlegt das Paket das Einmal-Token in der Registry; der Dienst registriert
+  sich beim ersten Start selbst und loescht das Token danach.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+
+  <Product Id="*"
+           Name="iTop Inventory Agent"
+           Language="1031"
+           Codepage="1252"
+           Version="$(var.Version)"
+           Manufacturer="Jan Kaluza"
+           UpgradeCode="7f3c1e94-5b28-4a6d-9c31-2e8a4b6f10d7">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Manufacturer="Jan Kaluza"
+             Description="iTop Inventory Agent"
+             Languages="1031"
+             SummaryCodepage="1252" />
+
+    <!-- Ein Upgrade ersetzt die vorhandene Fassung, statt eine zweite
+         Installation danebenzustellen. AllowSameVersionUpgrades erlaubt das
+         erneute Ausrollen derselben Version - im Testbetrieb unverzichtbar. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="Eine neuere Fassung des iTop Inventory Agent ist bereits installiert." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Der Agent ist ein 64-Bit-Programm; ohne diese Pruefung landete er auf
+         einem 32-Bit-System in einem Verzeichnis, das es dort nicht gibt. -->
+    <Condition Message="Der iTop Inventory Agent setzt ein 64-Bit-Windows voraus.">
+      <![CDATA[VersionNT64]]>
+    </Condition>
+
+    <!-- ===================================================================
+         Eigenschaften, die bei der Installation gesetzt werden koennen.
+         Secure="yes" ist noetig, damit sie eine Installation mit erhoehten
+         Rechten ueberhaupt erreichen.
+         =================================================================== -->
+    <Property Id="COLLECTORURL" Secure="yes" />
+    <Property Id="ENROLLTOKEN" Secure="yes" Hidden="yes" />
+    <Property Id="CACERTPATH" Secure="yes" />
+
+    <!-- Ohne Collector-URL startet der Dienst zwar, steigt aber sofort wieder
+         aus. Lieber gleich bei der Installation abbrechen und sagen, warum.
+         Bei Deinstallation (Installed) darf die Bedingung nicht greifen. -->
+    <Condition Message="COLLECTORURL muss angegeben werden, z. B.: msiexec /i itop-agent.msi COLLECTORURL=https://collector.example.internal">
+      <![CDATA[COLLECTORURL OR Installed]]>
+    </Condition>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="itop-agent" />
+      </Directory>
+    </Directory>
+
+    <ComponentGroup Id="AgentComponents" Directory="INSTALLFOLDER">
+
+      <Component Id="AgentExecutable" Guid="1c9a5f60-3d84-4b17-8e52-9a0c7d3b45e1" Win64="yes">
+        <File Id="AgentExe" Name="itop-agent.exe" Source="$(var.BinPath)" KeyPath="yes" />
+
+        <!-- ErrorControl normal: schlaegt der Dienst fehl, protokolliert Windows
+             das - faehrt aber weiter hoch. Ein Inventar-Agent darf ein System
+             nicht am Starten hindern. -->
+        <ServiceInstall Id="AgentService"
+                        Name="itop-agent"
+                        DisplayName="iTop Inventory Agent"
+                        Description="Sammelt Inventardaten und meldet sie an den iTop-Collector."
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Account="LocalSystem"
+                        Vital="yes">
+          <!-- Nach einem Absturz zweimal erneut versuchen, dann Ruhe. Ein
+               dauerhaft fehlschlagender Dienst (falsches Token, Collector nicht
+               erreichbar) soll nicht endlos neu starten - der Grund steht im
+               Ereignisprotokoll und will gelesen werden. -->
+          <util:ServiceConfig FirstFailureActionType="restart"
+                              SecondFailureActionType="restart"
+                              ThirdFailureActionType="none"
+                              RestartServiceDelayInSeconds="60" />
+        </ServiceInstall>
+
+        <ServiceControl Id="AgentServiceControl"
+                        Name="itop-agent"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="no" />
+      </Component>
+
+      <!-- ===================================================================
+           Konfiguration in der Registry.
+
+           Bewusst hier und nicht als Umgebungsvariable: ein Windows-Dienst erbt
+           die Umgebung der aufrufenden Shell NICHT. HKLM\SOFTWARE\iTopAgent ist
+           derselbe Ort, an dem auch GUID und Device-Token liegen, und die
+           Standard-ACL beschraenkt den Schreibzugriff auf SYSTEM und
+           Administratoren.
+           =================================================================== -->
+      <Component Id="AgentConfiguration" Guid="4e7b2a18-6c95-4f83-b0d6-5a1e9c8f27b3" Win64="yes">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\iTopAgent">
+          <RegistryValue Name="CollectorUrl" Type="string" Value="[COLLECTORURL]" KeyPath="yes" />
+        </RegistryKey>
+      </Component>
+
+      <!-- Nur schreiben, wenn die Eigenschaft gesetzt wurde. Sonst stuende ein
+           Leerwert in der Registry, und der Agent koennte "nicht gesetzt" nicht
+           von "absichtlich leer" unterscheiden. -->
+      <Component Id="AgentEnrollToken" Guid="9d4f8c72-1a63-4e59-8b27-3f0d6e5a94c8" Win64="yes">
+        <Condition><![CDATA[ENROLLTOKEN]]></Condition>
+        <RegistryKey Root="HKLM" Key="SOFTWARE\iTopAgent">
+          <RegistryValue Name="EnrollToken" Type="string" Value="[ENROLLTOKEN]" KeyPath="yes" />
+        </RegistryKey>
+      </Component>
+
+      <Component Id="AgentCaCert" Guid="2b8e5d31-7f42-4c96-a8e1-6d3b0e9c47a2" Win64="yes">
+        <Condition><![CDATA[CACERTPATH]]></Condition>
+        <RegistryKey Root="HKLM" Key="SOFTWARE\iTopAgent">
+          <RegistryValue Name="CaCertPath" Type="string" Value="[CACERTPATH]" KeyPath="yes" />
+        </RegistryKey>
+      </Component>
+
+      <!-- ===================================================================
+           Ereignisquelle fuer das Anwendungsprotokoll.
+
+           Ein Dienst hat kein stdout/stderr - ohne diese Registrierung liefe der
+           Agent unbeobachtbar. Es sind nur Registry-Werte, deshalb deklarativ
+           statt ueber eine Custom Action.
+
+           EventMessageFile zeigt auf EventCreate.exe: der uebliche Weg fuer
+           Programme ohne eigene Nachrichtendatei. Die Ereignisanzeige haengt
+           dann einen Hinweis auf die fehlende Beschreibung an, der Meldungstext
+           selbst bleibt lesbar.
+           =================================================================== -->
+      <Component Id="AgentEventLogSource" Guid="6a1d3e57-8b94-4207-9f6c-1e5a8d2b73f4" Win64="yes">
+        <RegistryKey Root="HKLM"
+                     Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\itop-agent">
+          <RegistryValue Name="EventMessageFile" Type="expandable"
+                         Value="%SystemRoot%\System32\EventCreate.exe" KeyPath="yes" />
+          <!-- 7 = Error | Warning | Information -->
+          <RegistryValue Name="TypesSupported" Type="integer" Value="7" />
+        </RegistryKey>
+      </Component>
+
+      <!-- Beim Deinstallieren das Programmverzeichnis mitentfernen.
+           GUID und Device-Token liegen in der Registry, nicht hier - siehe
+           unten zur Deinstallation. -->
+      <Component Id="AgentFolderCleanup" Guid="5c2f9b46-0e73-41a8-b95d-7c4a1f8e6032" Win64="yes">
+        <CreateFolder />
+        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+        <RegistryValue Root="HKLM" Key="SOFTWARE\iTopAgent" Name="InstallPath"
+                       Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="iTop Inventory Agent" Level="1">
+      <ComponentGroupRef Id="AgentComponents" />
+    </Feature>
+
+    <!--
+      HINWEIS ZUR DEINSTALLATION:
+      AgentGuid und DeviceToken unter HKLM\SOFTWARE\iTopAgent werden BEWUSST
+      nicht entfernt. Wird das Paket nur aktualisiert oder kurzzeitig
+      deinstalliert, muesste sich die Maschine sonst neu registrieren - und
+      bekaeme eine neue GUID, was in iTop ein zweites CI erzeugt. Dieselbe
+      Ueberlegung wie bei /var/lib/itop-agent unter Linux.
+    -->
+
+  </Product>
+</Wix>

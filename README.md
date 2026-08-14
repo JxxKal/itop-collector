@@ -3,10 +3,10 @@
 Inventar-Agent und Collector für die iTop-CMDB. Siehe `PROJECT.md` für Ziel,
 Architektur und Roadmap.
 
-**Stand:** M0–M4 sind durch und auf echten Maschinen verifiziert — Windows 11
-und Debian 13 melden über den Collector in eine iTop-3.2.3-Instanz. Offen ist
-die Paketierung für Windows (MSI, Code-Signing) und das Software-Inventar auf
-der iTop-Seite.
+**Stand:** M0–M5 sind durch und auf echten Maschinen verifiziert — Windows 11 und
+Debian 13 melden über den Collector in eine iTop-3.2.3-Instanz, verteilt per MSI
+bzw. `.deb`. Offen sind das Code-Signing und das Software-Inventar auf der
+iTop-Seite.
 
 ## Was hier schon funktioniert
 
@@ -54,10 +54,34 @@ Unter Windows liegt beides in `HKLM\SOFTWARE\iTopAgent`.
 **Wichtig für den Dienstbetrieb:** ein Windows-Dienst erbt die Umgebungsvariablen
 der aufrufenden Shell **nicht**. Wer interaktiv mit gesetztem
 `ITOP_COLLECTOR_URL` testet und den Dienst dann installiert, bekommt einen
-Dienst, der beim Start sofort aussteigt. Deshalb:
+Dienst, der beim Start sofort aussteigt. Deshalb liegt die Konfiguration in
+`HKLM\SOFTWARE\iTopAgent`.
+
+### Verteilung per MSI (empfohlen)
 
 ```powershell
-.\itop-agent.exe -set-url http://collector.example.internal
+msiexec /i itop-agent-0.7.0.msi /qn `
+  COLLECTORURL=https://collector.example.internal `
+  ENROLLTOKEN=<einmal-token>
+```
+
+Das MSI legt die Datei nach `C:\Program Files\itop-agent\`, richtet den Dienst
+ein, schreibt die Konfiguration in die Registry und registriert die
+Ereignisquelle. Alles deklarativ — bricht die Installation ab, räumt Windows
+selbst auf.
+
+**Das Enrollment findet bewusst nicht während der Installation statt.** Bei
+unbeaufsichtigter Verteilung über GPO oder Intune ist der Collector nicht
+zwingend erreichbar; ein Netzfehler würde sonst die ganze Installation scheitern
+lassen. Stattdessen hinterlegt das Paket das Einmal-Token in der Registry, der
+Dienst registriert sich beim ersten Start selbst und **löscht das Token danach**.
+
+Optional: `CACERTPATH=C:\pfad\zur\ca.crt` verankert die interne CA.
+
+### Von Hand
+
+```powershell
+.\itop-agent.exe -set-url https://collector.example.internal
 .\itop-agent.exe -enroll <einmal-token>
 .\itop-agent.exe -install          # registriert auch die Ereignisquelle
 Start-Service itop-agent
@@ -231,4 +255,7 @@ Go ist zum Entwickeln nicht lokal nötig — der Container reicht.
 * **Container als CI.** `virtualization: "container"` wird erkannt, aber weiter
   als PC/Server behandelt. Ob Container überhaupt in die CMDB gehören, ist eine
   offene fachliche Frage — bis dahin lieber sichtbar als still verworfen.
-* **Paketierung (M5).** `.deb`/`.rpm` via nfpm, systemd-Unit, MSI, Code-Signing.
+* **Code-Signing (Rest von M5).** Die Binaries und das MSI sind **nicht
+  signiert**. Ein unsignierter Dienst, der Hardware ausliest und nach außen
+  meldet, wird von Defender und EDR als Schadsoftware eingestuft — das gehört vor
+  den Pilotbetrieb geklärt, nicht danach.

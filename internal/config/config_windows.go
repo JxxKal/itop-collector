@@ -3,6 +3,7 @@
 package config
 
 import (
+	"errors"
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
@@ -25,6 +26,8 @@ func valueName(key string) string {
 		return "CaCertPath"
 	case KeySkipTLSVerify:
 		return "SkipTlsVerify"
+	case KeyEnrollToken:
+		return "EnrollToken"
 	}
 	return key
 }
@@ -40,6 +43,19 @@ func fromStore(key string) string {
 		return ""
 	}
 	return strings.TrimSpace(v)
+}
+
+func deleteFromStore(key string) error {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, regPath, registry.SET_VALUE)
+	if err != nil {
+		return nil // Schluessel gibt es nicht - nichts zu tun
+	}
+	defer k.Close()
+	if err := k.DeleteValue(valueName(key)); err != nil &&
+		!errors.Is(err, registry.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func toStore(key, value string) error {
