@@ -307,6 +307,48 @@ Liefert die Programmnamen, die in keine Gruppe fallen, absteigend nach
 Häufigkeit. Was oben steht, lohnt sich als nächste Gruppe oder als zusätzliches
 Muster. Die Startliste legt `deploy/itop-stack/software_groups.py` an.
 
+## Datenmodell-Erweiterungen
+
+| Extension | Was sie ergänzt |
+|---|---|
+| `custom-agent-inventory` | `agent_guid` und `agent_last_seen` an `FunctionalCI`, `agent_match_patterns` an `Software` |
+| `custom-device-network` | `macaddress` und `dns_name` an den Geräteklassen |
+
+### custom-device-network
+
+Ergänzt MAC-Adresse und DNS-Name an `NAS`, `Printer`, `VirtualMachine`,
+`Server`, `PC` und `NetworkDevice`. Die beiden Felder hängen an **verschiedenen**
+Stellen, weil `macaddress` im Kern schon teilweise existiert:
+
+| Feld | Definiert an | Wirkt auf |
+|---|---|---|
+| `dns_name` | `ConnectableCI`, `VirtualDevice` | alle sechs Klassen |
+| `macaddress` | `DatacenterDevice`, `VirtualDevice` | Server, NAS, NetworkDevice, VirtualMachine |
+
+`PC`, `Printer` und `Peripheral` bringen `macaddress` von Haus aus mit und
+bleiben **unberührt** — ein zweites MAC-Feld daneben wäre eine Dublette, bei der
+niemand mehr weiß, welches gilt.
+
+Der Attributcode ist bewusst derselbe wie im Kern. Die Klassen liegen in
+getrennten Ästen, es kollidiert also nichts, und am Ende trägt jede der sechs
+Klassen ein Feld namens `macaddress`. Ein abweichender Name wie `mac_address`
+neben `macaddress` wäre eine Falle beim Schreiben von OQL.
+
+**Preis dieser Lösung:** da `macaddress` an mehreren Stellen definiert ist, gibt
+es keine gemeinsame Oberklasse, die es trägt — eine Abfrage über alle
+Gerätetypen muss je Klasse gestellt werden. Für `dns_name` geht dagegen
+`SELECT ConnectableCI WHERE dns_name = '…'` und deckt PC, Printer und den
+gesamten `DatacenterDevice`-Zweig ab.
+
+Mitvererbt wird an `SANSwitch`, `StorageSystem`, `TapeLibrary` und
+`VirtualHost` — ebenfalls netzangeschlossene Geräte, bei denen beide Felder
+sinnvoll sind.
+
+Beide Felder haben ein nachsichtiges Prüfmuster: MAC akzeptiert
+`AA:BB:CC:DD:EE:FF`, `AA-BB-CC-DD-EE-FF` und `AABBCCDDEEFF`, DNS auch
+Unterstriche (nicht RFC-konform, in gewachsenen Windows-Umgebungen aber
+verbreitet). Der Leerwert ist überall erlaubt.
+
 ## Code-Signing
 
 Die Windows-Artefakte werden mit `deploy/windows/sign.sh` signiert

@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<itop_design xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="3.2">
+  <!--
+    ACHTUNG: vor <itop_design> darf KEIN Kommentar stehen. iTop liest das
+    Wurzelelement mit $oDocument->childNodes->item(0) (ModelFactory::LoadModule),
+    und LoadDelta() steigt bei allem, was kein DOMElement ist, kommentarlos aus.
+    Ein Kommentar an dieser Stelle laesst das Setup fehlerfrei durchlaufen und
+    erzeugt trotzdem keine einzige Klasse.
+
+    Zweck: Netzkennung an Geraeteklassen - MAC-Adresse und DNS-Name fuer
+    NAS, Printer, VirtualMachine, Server, PC und NetworkDevice.
+
+    VERERBUNG DIESER SECHS KLASSEN (iTop 3.2):
+
+        FunctionalCI
+        ├── PhysicalDevice
+        │   ├── ConnectableCI ─┬─ PC          (hat macaddress bereits)
+        │   │                  ├─ Printer     (hat macaddress bereits)
+        │   │                  └─ DatacenterDevice ─┬─ Server
+        │   │                                       ├─ NAS
+        │   │                                       └─ NetworkDevice
+        │   └── Peripheral     (hat macaddress bereits, anderer Ast)
+        └── VirtualDevice ── VirtualMachine
+
+    Daraus folgen ZWEI unterschiedliche Einhaengepunkte, je Feld einer:
+
+    macaddress  ->  DatacenterDevice + VirtualDevice
+        PC, Printer und Peripheral bringen das Feld von Haus aus mit. Dort wird
+        NICHTS angefasst - ein zweites MAC-Feld daneben waere eine Dublette, bei
+        der niemand mehr weiss, welches gilt. Ergaenzt wird nur, wo es fehlt.
+
+        Der Attributcode ist bewusst DERSELBE wie im Kern. Die Klassen liegen in
+        getrennten Aesten, es kollidiert also nichts - und am Ende hat jede der
+        sechs Klassen ein Feld namens macaddress. Ein abweichender Name wie
+        "mac_address" neben "macaddress" waere eine Falle, in die frueher oder
+        spaeter jemand beim Schreiben einer OQL-Abfrage tappt.
+
+    dns_name    ->  ConnectableCI + VirtualDevice
+        Existiert nirgends, wird also einmal fuer den ganzen Geraetezweig
+        definiert.
+
+    PREIS DIESER LOESUNG: da macaddress an drei verschiedenen Stellen definiert
+    ist (Kern an PC/Printer/Peripheral, hier an DatacenterDevice/VirtualDevice),
+    gibt es KEINE gemeinsame Oberklasse, die das Feld traegt. Eine Abfrage ueber
+    alle Geraetetypen hinweg muss deshalb je Klasse gestellt werden:
+
+        SELECT PC WHERE macaddress = '...'
+        SELECT Server WHERE macaddress = '...'
+
+    Fuer dns_name geht dagegen SELECT ConnectableCI WHERE dns_name = '...' und
+    deckt damit PC, Printer und den gesamten DatacenterDevice-Zweig ab.
+
+    MITVERERBT wird an vier nicht ausdruecklich genannte Klassen: SANSwitch,
+    StorageSystem, TapeLibrary (unter DatacenterDevice) und VirtualHost (unter
+    VirtualDevice). Bewusst in Kauf genommen - es sind ebenfalls
+    netzangeschlossene Geraete, bei denen beide Felder sinnvoll sind. Die
+    Alternative waere, die Felder sechsmal einzeln zu definieren; dann waeren es
+    sechs VERSCHIEDENE Attribute und auch dns_name liesse sich nicht mehr
+    klassenuebergreifend abfragen.
+
+    Update-Sicherheit: diese Datei definiert ausschliesslich NEUE Felder
+    (_delta="define") an bestehenden Klassen (_delta="must_exist"). Kein
+    Core-Feld wird ueberschrieben, ein iTop-Update kann hier nicht kollidieren.
+  -->
+  <classes>
+
+    <!-- ================================================================
+         DNS-Name fuer den gesamten anschliessbaren Geraetezweig:
+         PC, Printer und ueber DatacenterDevice auch Server, NAS,
+         NetworkDevice (sowie SANSwitch, StorageSystem, TapeLibrary).
+         ================================================================ -->
+    <class id="ConnectableCI" _delta="must_exist">
+      <fields>
+        <field id="dns_name" xsi:type="AttributeString" _delta="define">
+          <sql>dns_name</sql>
+          <default_value/>
+          <is_null_allowed>true</is_null_allowed>
+          <!--
+            Voll qualifizierter Name oder Kurzname. Unterstriche sind nicht
+            RFC-konform, kommen in gewachsenen Windows-Umgebungen aber vor -
+            deshalb zugelassen, statt bestehende Namen abzuweisen. Der Leerwert
+            ist ausdruecklich erlaubt, sonst waere das Feld faktisch Pflicht.
+          -->
+          <validation_pattern>^$|^[A-Za-z0-9_]([A-Za-z0-9_.-]{0,253}[A-Za-z0-9])?$</validation_pattern>
+        </field>
+      </fields>
+    </class>
+
+    <!-- ================================================================
+         MAC-Adresse fuer Server, NAS, NetworkDevice
+         (sowie SANSwitch, StorageSystem, TapeLibrary).
+
+         PC und Printer bleiben unberuehrt - sie haben das Feld bereits.
+         ================================================================ -->
+    <class id="DatacenterDevice" _delta="must_exist">
+      <fields>
+        <field id="macaddress" xsi:type="AttributeString" _delta="define">
+          <sql>macaddress</sql>
+          <default_value/>
+          <is_null_allowed>true</is_null_allowed>
+          <!--
+            Bewusst nachsichtig: erlaubt sind die drei gaengigen Schreibweisen
+            AA:BB:CC:DD:EE:FF, AA-BB-CC-DD-EE-FF und AABBCCDDEEFF sowie der
+            Leerwert. Ein strengeres Muster wuerde legitime Eingaben abweisen
+            und die Pflege behindern; gar keines wuerde jeden Tippfehler
+            durchlassen.
+
+            Hinweis: das Kernfeld an PC/Printer hat KEINE Pruefung. Die neuen
+            Klassen sind damit etwas strenger - das ist gewollt, aber beim
+            Vergleich von Datenqualitaet zwischen den Klassen zu bedenken.
+          -->
+          <validation_pattern>^$|^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$|^[0-9A-Fa-f]{12}$</validation_pattern>
+        </field>
+      </fields>
+    </class>
+
+    <!-- ================================================================
+         VirtualMachine (sowie VirtualHost).
+
+         Eigene Definition, weil VirtualDevice nicht unter ConnectableCI
+         haengt - eine virtuelle Maschine ist in iTops Modell kein
+         anschliessbares Geraet. Deshalb hier BEIDE Felder.
+         ================================================================ -->
+    <class id="VirtualDevice" _delta="must_exist">
+      <fields>
+
+        <field id="macaddress" xsi:type="AttributeString" _delta="define">
+          <sql>macaddress</sql>
+          <default_value/>
+          <is_null_allowed>true</is_null_allowed>
+          <validation_pattern>^$|^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$|^[0-9A-Fa-f]{12}$</validation_pattern>
+        </field>
+
+        <field id="dns_name" xsi:type="AttributeString" _delta="define">
+          <sql>dns_name</sql>
+          <default_value/>
+          <is_null_allowed>true</is_null_allowed>
+          <validation_pattern>^$|^[A-Za-z0-9_]([A-Za-z0-9_.-]{0,253}[A-Za-z0-9])?$</validation_pattern>
+        </field>
+
+      </fields>
+    </class>
+
+  </classes>
+</itop_design>
