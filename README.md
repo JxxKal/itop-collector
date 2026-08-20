@@ -316,6 +316,9 @@ Muster. Die Startliste legt `deploy/itop-stack/software_groups.py` an.
 
 ### custom-device-network
 
+> Ausführliche Seite: [docs/Extension-custom-device-network.md](docs/Extension-custom-device-network.md)
+> — Feldübersicht, Begründung der Einhängepunkte, Installation und Rückweg.
+
 Ergänzt MAC-Adresse und DNS-Name an `NAS`, `Printer`, `VirtualMachine`,
 `Server`, `PC` und `NetworkDevice`. Die beiden Felder hängen an **verschiedenen**
 Stellen, weil `macaddress` im Kern schon teilweise existiert:
