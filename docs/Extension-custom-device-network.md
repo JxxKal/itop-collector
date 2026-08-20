@@ -168,6 +168,96 @@ Erwartet: `macaddress` an `datacenterdevice` und `virtualdevice`, `dns_name` an
 > **Wenn iTop die Felder nicht kennt** (`invalid attribute code`), hält der
 > Modell-Cache noch den alten Stand: `docker restart <stack>-itop-1`.
 
+## Wo die Felder in der Oberfläche stehen
+
+In den **Eigenschaften** des Objekts, in der Gruppe *Weitere Informationen*
+(`fieldset:Server:moreinfo`) — direkt bei den übrigen Netzangaben:
+
+| Klasse | Platzierung |
+|---|---|
+| `PC` | nach `macaddress` und `ipaddress_id` |
+| `Printer` | nach `macaddress` und `ipaddress_id` |
+| `Server`, `NAS`, `NetworkDevice` | nach `managementip_id` |
+| `VirtualMachine` | nach `managementip_id` |
+
+Zusätzlich in der **Suche**, damit sich ein Gerät über MAC-Adresse oder
+DNS-Namen finden lässt.
+
+> **Ein Feld zu definieren macht es nicht sichtbar.** iTop zeigt in den
+> Eigenschaften nur, was in der Präsentation (ZList) der Klasse steht. Alles
+> andere ist zwar gespeichert und über OQL abfragbar, taucht aber in keinem
+> Formular auf.
+>
+> Und Präsentationen werden **nicht vererbt**: jede konkrete Klasse bringt ihre
+> eigene, vollständige Liste mit — `ConnectableCI` hat 16 Einträge, `PC`
+> dagegen 34. Ein Eintrag an der Oberklasse bewirkt deshalb nichts; die
+> Extension trägt sie je Zielklasse einzeln ein.
+
+Die vier mitvererbten Klassen (`SANSwitch`, `StorageSystem`, `TapeLibrary`,
+`VirtualHost`) tragen die Felder, **zeigen sie aber nicht an** — gefordert waren
+die sechs oben. Wer sie dort ebenfalls sehen will, ergänzt den jeweiligen Block
+in der Extension nach demselben Muster.
+
+## Stolperstein: Cache nicht beschreibbar
+
+Beim Abschluss des Assistenten kann folgender Abbruch auftreten:
+
+```
+Warning: mkdir(): Permission denied in setup/setuputils.class.inc.php on line 802
+Fatal error: Uncaught RuntimeException: Directory
+  "/var/www/html/data/cache-production//InterfaceDiscovery" was not created
+```
+
+**Erst die Entwarnung:** Der Abbruch kommt aus `WizStepDone->Display` — dem
+*letzten* Schritt. Kopieren, Kompilieren, Schemaänderung und `create-config`
+sind zu diesem Zeitpunkt bereits durch. Gescheitert ist nur das Anzeigen der
+Abschlussseite; die Installation selbst ist in aller Regel vollständig.
+
+### Ursache
+
+`data/` ist ein gemeinsames Volume von Web- und Cron-Container. Läuft der
+**Cron-Container als root**, legt er root-eigene Cache-Verzeichnisse an — und
+Apache, das als `www-data` läuft, kann anschließend nicht mehr hineinschreiben.
+
+Der Entrypoint korrigiert die Rechte nur **beim Start** des Containers. Ein
+dauerhaft als root laufender Cron erzeugt sie danach immer wieder neu, der
+Fehler kommt also zurück.
+
+### Sofort entsperren
+
+```bash
+docker exec -u 0 <stack>-itop-1 rm -rf /var/www/html/data/cache-production
+docker exec -u 0 <stack>-itop-1 chown -R www-data:www-data \
+  /var/www/html/data /var/www/html/conf /var/www/html/env-production
+docker restart <stack>-itop-1
+```
+
+Der Cache wird beim nächsten Aufruf neu erzeugt.
+
+### Statt neu durchlaufen: prüfen
+
+```bash
+docker exec <stack>-itop-db-1 mariadb -u<user> -p<pw> -D <db> -N -e \
+  "SELECT name,version,installed FROM priv_module_install WHERE name LIKE 'custom-%';"
+docker exec <stack>-itop-1 ls /var/www/html/env-production/ | grep custom-
+```
+
+### Ursache dauerhaft beseitigen
+
+```bash
+docker exec <stack>-itop-cron-1 id     # zeigt es uid=0(root)?
+```
+
+Wenn ja, im Stack beim Service `itop-cron` ergänzen und neu ausrollen:
+
+```yaml
+  itop-cron:
+    user: "www-data"
+```
+
+> Derselbe Mechanismus hat zuvor schon `data/backups` betroffen. Wer den
+> Cron-Benutzer einmal richtig setzt, ist beide Fehlerbilder los.
+
 ## Verifiziert
 
 Auf der Testinstanz (iTop 3.2.3-2) nachgemessen:
@@ -182,6 +272,8 @@ Auf der Testinstanz (iTop 3.2.3-2) nachgemessen:
 | MAC: zu kurz, nicht hexadezimal, Freitext abgewiesen | ✔ |
 | DNS: FQDN, Kurzname, Unterstrich, Leerwert angenommen | ✔ |
 | DNS: führender Bindestrich, Leerzeichen abgewiesen | ✔ |
+| Beide Felder in Eigenschaften und Suche aller sechs Klassen | ✔ |
+| Platzierung bei den übrigen Netzangaben | ✔ |
 
 ## Rückweg
 

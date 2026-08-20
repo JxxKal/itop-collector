@@ -240,6 +240,14 @@ Erwartet: `agent_guid` (varchar), `agent_last_seen` (datetime) und
 Kennt die laufende Instanz die neuen Attribute nicht (`invalid attribute code`),
 hält der Modell-Cache noch den alten Stand: `docker restart <stack>-itop-1`.
 
+> **Bricht der Assistent am Ende mit `mkdir(): Permission denied` unter
+> `data/cache-production` ab**, ist der Cron-Container als root gelaufen und hat
+> root-eigene Cache-Verzeichnisse hinterlassen. Der Abbruch kommt aus dem
+> *letzten* Schritt — die Installation ist meist vollständig. Entsperren mit
+> `rm -rf data/cache-production` und `chown -R www-data:www-data` auf `data`,
+> `conf` und `env-production`, dann Container neu starten. Dauerhaft behebt es
+> nur `user: "www-data"` beim Cron-Service (siehe Schritt 0).
+
 ---
 
 ## 4. Synchro Data Sources anlegen

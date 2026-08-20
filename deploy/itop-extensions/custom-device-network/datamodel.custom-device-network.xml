@@ -141,5 +141,221 @@
       </fields>
     </class>
 
+
+    <!-- ================================================================
+         SICHTBARKEIT IN DER OBERFLAECHE
+
+         Ein Feld zu definieren macht es NICHT sichtbar. iTop zeigt in den
+         Eigenschaften nur, was in der jeweiligen Praesentation (ZList) steht -
+         alles andere ist zwar gespeichert und ueber OQL abfragbar, taucht aber
+         in keinem Formular auf.
+
+         Und: Praesentationen werden NICHT vererbt. Jede konkrete Klasse bringt
+         ihre eigene, vollstaendige Liste mit - ConnectableCI hat 16 Eintraege,
+         PC dagegen 33. Ein Eintrag an der Oberklasse wuerde also nichts
+         bewirken. Deshalb steht hier je Zielklasse ein eigener Block.
+
+         Platziert wird in fieldset:Server:moreinfo, direkt bei macaddress und
+         ipaddress_id - dort, wo der Kern die Netzangaben bereits fuehrt.
+         Zusaetzlich in die Suche, damit sich ein Geraet ueber MAC oder
+         DNS-Namen finden laesst.
+
+         Die vier mitvererbten Klassen (SANSwitch, StorageSystem, TapeLibrary,
+         VirtualHost) bekommen BEWUSST keinen Eintrag: sie tragen die Felder,
+         zeigen sie aber nicht an. Gefordert waren die sechs unten. Wer sie dort
+         auch sehen will, ergaenzt den jeweiligen Block nach demselben Muster.
+         ================================================================ -->
+
+    <!-- PC.  macaddress ist im Kern bereits platziert. -->
+    <class id="PC" _delta="must_exist">
+      <presentation>
+        <details>
+          <items>
+            <item id="col:col1">
+              <items>
+                <item id="fieldset:Server:moreinfo">
+                  <items>
+                    <item id="dns_name" _delta="define_if_not_exists">
+                      <rank>76</rank>
+                    </item>
+                  </items>
+                </item>
+              </items>
+            </item>
+          </items>
+        </details>
+        <search>
+          <items>
+            <item id="dns_name" _delta="define_if_not_exists">
+              <rank>140</rank>
+            </item>
+          </items>
+        </search>
+      </presentation>
+    </class>
+
+    <!-- Printer.  macaddress ist im Kern bereits platziert. -->
+    <class id="Printer" _delta="must_exist">
+      <presentation>
+        <details>
+          <items>
+            <item id="col:col1">
+              <items>
+                <item id="fieldset:Server:moreinfo">
+                  <items>
+                    <item id="dns_name" _delta="define_if_not_exists">
+                      <rank>26</rank>
+                    </item>
+                  </items>
+                </item>
+              </items>
+            </item>
+          </items>
+        </details>
+        <search>
+          <items>
+            <item id="dns_name" _delta="define_if_not_exists">
+              <rank>130</rank>
+            </item>
+          </items>
+        </search>
+      </presentation>
+    </class>
+
+    <!-- Server. -->
+    <class id="Server" _delta="must_exist">
+      <presentation>
+        <details>
+          <items>
+            <item id="col:col1">
+              <items>
+                <item id="fieldset:Server:moreinfo">
+                  <items>
+                    <item id="macaddress" _delta="define_if_not_exists">
+                      <rank>46</rank>
+                    </item>
+                    <item id="dns_name" _delta="define_if_not_exists">
+                      <rank>47</rank>
+                    </item>
+                  </items>
+                </item>
+              </items>
+            </item>
+          </items>
+        </details>
+        <search>
+          <items>
+            <item id="macaddress" _delta="define_if_not_exists">
+              <rank>150</rank>
+            </item>
+            <item id="dns_name" _delta="define_if_not_exists">
+              <rank>160</rank>
+            </item>
+          </items>
+        </search>
+      </presentation>
+    </class>
+
+    <!-- NAS. -->
+    <class id="NAS" _delta="must_exist">
+      <presentation>
+        <details>
+          <items>
+            <item id="col:col1">
+              <items>
+                <item id="fieldset:Server:moreinfo">
+                  <items>
+                    <item id="macaddress" _delta="define_if_not_exists">
+                      <rank>26</rank>
+                    </item>
+                    <item id="dns_name" _delta="define_if_not_exists">
+                      <rank>27</rank>
+                    </item>
+                  </items>
+                </item>
+              </items>
+            </item>
+          </items>
+        </details>
+        <search>
+          <items>
+            <item id="macaddress" _delta="define_if_not_exists">
+              <rank>150</rank>
+            </item>
+            <item id="dns_name" _delta="define_if_not_exists">
+              <rank>160</rank>
+            </item>
+          </items>
+        </search>
+      </presentation>
+    </class>
+
+    <!-- NetworkDevice. -->
+    <class id="NetworkDevice" _delta="must_exist">
+      <presentation>
+        <details>
+          <items>
+            <item id="col:col1">
+              <items>
+                <item id="fieldset:Server:moreinfo">
+                  <items>
+                    <item id="macaddress" _delta="define_if_not_exists">
+                      <rank>46</rank>
+                    </item>
+                    <item id="dns_name" _delta="define_if_not_exists">
+                      <rank>48</rank>
+                    </item>
+                  </items>
+                </item>
+              </items>
+            </item>
+          </items>
+        </details>
+        <search>
+          <items>
+            <item id="macaddress" _delta="define_if_not_exists">
+              <rank>150</rank>
+            </item>
+            <item id="dns_name" _delta="define_if_not_exists">
+              <rank>160</rank>
+            </item>
+          </items>
+        </search>
+      </presentation>
+    </class>
+
+    <!-- VirtualMachine. -->
+    <class id="VirtualMachine" _delta="must_exist">
+      <presentation>
+        <details>
+          <items>
+            <item id="col:col1">
+              <items>
+                <item id="fieldset:Server:moreinfo">
+                  <items>
+                    <item id="macaddress" _delta="define_if_not_exists">
+                      <rank>26</rank>
+                    </item>
+                    <item id="dns_name" _delta="define_if_not_exists">
+                      <rank>27</rank>
+                    </item>
+                  </items>
+                </item>
+              </items>
+            </item>
+          </items>
+        </details>
+        <search>
+          <items>
+            <item id="macaddress" _delta="define_if_not_exists">
+              <rank>60</rank>
+            </item>
+            <item id="dns_name" _delta="define_if_not_exists">
+              <rank>70</rank>
+            </item>
+          </items>
+        </search>
+      </presentation>
+    </class>
   </classes>
 </itop_design>
